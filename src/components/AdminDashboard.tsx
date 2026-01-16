@@ -1,20 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Edit2, Power, PowerOff, Save, Loader2 } from 'lucide-react';
-import { AIModel, Webhook, AdminStats } from '../types';
-import { aiModelService, webhookService, analyticsService } from '../lib/adminService';
+import { X, Plus, Trash2, Edit2, Power, PowerOff, Save, Loader2, Download } from 'lucide-react';
+import { AIModel, AdminStats } from '../types';
+import { aiModelService, analyticsService } from '../lib/adminService';
+import { syncRecommendedModels } from '../lib/openRouterSync';
 
 interface AdminDashboardProps {
   onClose: () => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
-  const [activeTab, setActiveTab] = useState<'stats' | 'models' | 'webhooks'>('stats');
+  const [activeTab, setActiveTab] = useState<'stats' | 'models'>('stats');
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [models, setModels] = useState<AIModel[]>([]);
-  const [webhooks, setWebhooks] = useState<Webhook[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingModel, setEditingModel] = useState<Partial<AIModel> | null>(null);
-  const [editingWebhook, setEditingWebhook] = useState<Partial<Webhook> | null>(null);
+  const [syncingModels, setSyncingModels] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -29,13 +29,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
       } else if (activeTab === 'models') {
         const modelsData = await aiModelService.getAll();
         setModels(modelsData);
-      } else if (activeTab === 'webhooks') {
-        const webhooksData = await webhookService.getAll();
-        setWebhooks(webhooksData);
-        if (models.length === 0) {
-          const modelsData = await aiModelService.getAll();
-          setModels(modelsData);
-        }
       }
     } catch (error) {
       console.error('Error loading admin data:', error);
@@ -82,44 +75,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     }
   };
 
-  const handleSaveWebhook = async () => {
-    if (!editingWebhook || !editingWebhook.model_id) return;
-
-    try {
-      if (editingWebhook.id) {
-        await webhookService.update(editingWebhook.id, editingWebhook);
-      } else {
-        await webhookService.create(editingWebhook as Omit<Webhook, 'id' | 'created_at' | 'updated_at'>);
-      }
-      setEditingWebhook(null);
-      loadData();
-    } catch (error) {
-      console.error('Error saving webhook:', error);
-      alert('Failed to save webhook');
-    }
-  };
-
-  const handleDeleteWebhook = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this webhook?')) return;
-
-    try {
-      await webhookService.delete(id);
-      loadData();
-    } catch (error) {
-      console.error('Error deleting webhook:', error);
-      alert('Failed to delete webhook');
-    }
-  };
-
-  const handleToggleWebhook = async (webhook: Webhook) => {
-    try {
-      await webhookService.update(webhook.id, { is_active: !webhook.is_active });
-      loadData();
-    } catch (error) {
-      console.error('Error toggling webhook:', error);
-    }
-  };
-
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-6xl max-h-[90vh] flex flex-col">
@@ -134,7 +89,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         </div>
 
         <div className="flex border-b border-slate-200 dark:border-slate-700">
-          {['stats', 'models', 'webhooks'].map((tab) => (
+          {['stats', 'models'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab as any)}
@@ -165,15 +120,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
             </div>
           ) : activeTab === 'models' ? (
             <div className="space-y-4">
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center gap-3">
                 <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">AI Models</h3>
-                <button
-                  onClick={() => setEditingModel({ name: '', description: '', use_case: 'general', icon: 'bot', is_active: true })}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  <Plus size={18} />
-                  Add Model
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      if (confirm('Sync recommended OpenRouter models? (GPT-4, Claude, Gemini, etc.)')) {
+                        setSyncingModels(true);
+                        try {
+                          await syncRecommendedModels({ autoActivate: true });
+                          alert('Successfully synced OpenRouter models!');
+                          loadData();
+                        } catch (error) {
+                          console.error('Sync failed:', error);
+                          alert('Failed to sync models. Check console for details.');
+                        } finally {
+                          setSyncingModels(false);
+                        }
+                      }
+                    }}
+                    disabled={syncingModels}
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
+                    title="Sync recommended OpenRouter models"
+                  >
+                    {syncingModels ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
+                    Sync OpenRouter Models
+                  </button>
+                  <button
+                    onClick={() => setEditingModel({ name: '', description: '', use_case: 'general', icon: 'sparkles', is_active: true, openrouter_model: '' })}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Plus size={18} />
+                    Add Custom Model
+                  </button>
+                </div>
               </div>
 
               {editingModel && (
@@ -201,6 +181,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                       <option value="image">Image</option>
                       <option value="other">Other</option>
                     </select>
+                    <input
+                      type="text"
+                      placeholder="OpenRouter Model ID (e.g., openai/gpt-4)"
+                      value={editingModel.openrouter_model || ''}
+                      onChange={(e) => setEditingModel({ ...editingModel, openrouter_model: e.target.value })}
+                      className="col-span-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                    />
                     <input
                       type="text"
                       placeholder="Icon Name"
@@ -264,6 +251,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                         </span>
                       </div>
                       <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{model.description}</p>
+                      {model.openrouter_model && (
+                        <p className="text-xs text-slate-500 dark:text-slate-500 mt-1 font-mono">
+                          🌐 {model.openrouter_model}
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <button
@@ -294,151 +286,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                 ))}
               </div>
             </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Webhooks</h3>
-                <button
-                  onClick={() => setEditingWebhook({ name: '', url: '', model_id: '', is_active: true, timeout_seconds: 30 })}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  <Plus size={18} />
-                  Add Webhook
-                </button>
-              </div>
-
-              {editingWebhook && (
-                <div className="bg-slate-50 dark:bg-slate-900 p-6 rounded-lg border-2 border-blue-500">
-                  <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-4">
-                    {editingWebhook.id ? 'Edit Webhook' : 'New Webhook'}
-                  </h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <input
-                      type="text"
-                      placeholder="Webhook Name"
-                      value={editingWebhook.name || ''}
-                      onChange={(e) => setEditingWebhook({ ...editingWebhook, name: e.target.value })}
-                      className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                    />
-                    <select
-                      value={editingWebhook.model_id || ''}
-                      onChange={(e) => setEditingWebhook({ ...editingWebhook, model_id: e.target.value })}
-                      className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                    >
-                      <option value="">Select Model</option>
-                      {models.map((model) => (
-                        <option key={model.id} value={model.id}>{model.name}</option>
-                      ))}
-                    </select>
-                    <input
-                      type="url"
-                      placeholder="Webhook URL"
-                      value={editingWebhook.url || ''}
-                      onChange={(e) => setEditingWebhook({ ...editingWebhook, url: e.target.value })}
-                      className="col-span-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                    />
-                    <input
-                      type="text"
-                      placeholder="API Key (optional)"
-                      value={editingWebhook.api_key || ''}
-                      onChange={(e) => setEditingWebhook({ ...editingWebhook, api_key: e.target.value })}
-                      className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                    />
-                    <input
-                      type="number"
-                      placeholder="Timeout (seconds)"
-                      value={editingWebhook.timeout_seconds || 30}
-                      onChange={(e) => setEditingWebhook({ ...editingWebhook, timeout_seconds: parseInt(e.target.value) })}
-                      className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                      min="1"
-                      max="300"
-                    />
-                    <label className="col-span-2 flex items-center gap-2 text-slate-700 dark:text-slate-300">
-                      <input
-                        type="checkbox"
-                        checked={editingWebhook.is_active || false}
-                        onChange={(e) => setEditingWebhook({ ...editingWebhook, is_active: e.target.checked })}
-                        className="w-4 h-4"
-                      />
-                      Active
-                    </label>
-                  </div>
-                  <div className="flex justify-end gap-2 mt-4">
-                    <button
-                      onClick={() => setEditingWebhook(null)}
-                      className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSaveWebhook}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
-                      <Save size={18} />
-                      Save
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="grid gap-4">
-                {webhooks.map((webhook) => {
-                  const model = models.find(m => m.id === webhook.model_id);
-                  return (
-                    <div
-                      key={webhook.id}
-                      className="bg-slate-50 dark:bg-slate-900 p-4 rounded-lg flex items-center justify-between"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3">
-                          <h4 className="font-semibold text-slate-900 dark:text-slate-100">{webhook.name}</h4>
-                          <span className={`px-2 py-1 text-xs rounded-full ${
-                            webhook.is_active
-                              ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
-                              : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
-                          }`}>
-                            {webhook.is_active ? 'Active' : 'Inactive'}
-                          </span>
-                          {model && (
-                            <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
-                              {model.name}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 font-mono">{webhook.url}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">Timeout: {webhook.timeout_seconds}s</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleToggleWebhook(webhook)}
-                          className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                          title={webhook.is_active ? 'Deactivate' : 'Activate'}
-                        >
-                          {webhook.is_active ? (
-                            <Power size={18} className="text-green-600" />
-                          ) : (
-                            <PowerOff size={18} className="text-gray-600" />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => setEditingWebhook(webhook)}
-                          className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                        >
-                          <Edit2 size={18} className="text-blue-600" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteWebhook(webhook.id)}
-                          className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                        >
-                          <Trash2 size={18} className="text-red-600" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

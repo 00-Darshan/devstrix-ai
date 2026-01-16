@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { Plus, MessageSquare, Trash2, Edit2, Check, X, Search, BookOpen, LogOut } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Plus, Trash2, Edit2, Check, X, Search, Pin, PinOff, LogOut, LayoutGrid, Clock } from 'lucide-react';
 import { useChat } from '../contexts/ChatContext';
 import { useAdmin } from '../contexts/AdminContext';
 import { supabase } from '../lib/supabase';
+import { DeleteChatDialog } from './DeleteChatDialog';
 
 export const Sidebar: React.FC = () => {
   const {
@@ -12,6 +13,7 @@ export const Sidebar: React.FC = () => {
     deleteConversation,
     renameConversation,
     setCurrentConversation,
+    togglePinConversation,
   } = useChat();
 
   const { userProfile } = useAdmin();
@@ -19,22 +21,15 @@ export const Sidebar: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const handleNewChat = async () => {
     await createConversation();
   };
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
+  const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Delete this conversation?')) {
-      await deleteConversation(id);
-    }
-  };
-
-  const handleEdit = (id: string, currentTitle: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditingId(id);
-    setEditTitle(currentTitle);
+    setPendingDeleteId(id);
   };
 
   const handleSaveEdit = async (id: string) => {
@@ -44,6 +39,13 @@ export const Sidebar: React.FC = () => {
     setEditingId(null);
   };
 
+  const startEditing = (id: string, currentTitle: string) => {
+    setEditingId(id);
+    setEditTitle(currentTitle);
+  };
+
+
+
   const handleLogout = async () => {
     if (confirm('Are you sure you want to log out?')) {
       await supabase.auth.signOut();
@@ -51,143 +53,183 @@ export const Sidebar: React.FC = () => {
     }
   };
 
-  const filteredConversations = conversations.filter(conv =>
-    conv.title.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredConversations = useMemo(() => {
+    const lower = searchQuery.toLowerCase();
+    return conversations.filter(conv => conv.title.toLowerCase().includes(lower));
+  }, [conversations, searchQuery]);
+
+  const pinned = filteredConversations.filter(conv => conv.is_pinned);
+  const regular = filteredConversations.filter(conv => !conv.is_pinned);
 
   return (
-    <div className="w-64 bg-neutral-950 border-r border-neutral-800 flex flex-col h-full">
+    <aside className="hidden h-full min-h-0 w-[280px] flex-col border-r border-[color:var(--border)] bg-[color:var(--surface-contrast)] p-3 text-[color:var(--text-secondary)] lg:flex">
       {/* New Chat Button */}
-      <div className="p-3">
-        <button
-          onClick={handleNewChat}
-          className="w-full flex items-center gap-2 px-3 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg transition-colors border border-neutral-700"
-        >
-          <Plus size={18} />
-          <span className="text-sm font-medium">New chat</span>
-        </button>
-      </div>
+      <button
+        onClick={handleNewChat}
+        className="mb-4 flex w-full items-center gap-3 rounded-lg border border-[color:var(--border)] bg-white p-3 text-sm font-semibold text-[color:var(--text-primary)] shadow-sm transition-all hover:border-blue-300 hover:shadow-md dark:bg-neutral-800 dark:hover:border-neutral-600"
+      >
+        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400">
+          <Plus size={14} strokeWidth={3} />
+        </div>
+        New Chat
+      </button>
 
-      {/* Search Bar */}
-      <div className="px-3 mb-2">
+      {/* Navigation Links */}
+      <div className="space-y-1 mb-6">
+        <button className="nav-item">
+          <LayoutGrid size={18} />
+          <span>Library</span>
+        </button>
         <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--text-muted)]" />
           <input
-            type="text"
-            placeholder="Search chats"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 rounded-lg bg-neutral-900 border border-neutral-800 text-white text-sm placeholder-neutral-500 focus:outline-none focus:border-neutral-700"
+            placeholder="Search . . ."
+            className="w-full rounded-lg bg-transparent px-9 py-2 text-sm text-[color:var(--text-primary)] placeholder-[color:var(--text-muted)] focus:bg-[color:var(--panel-accent)] focus:outline-none"
           />
         </div>
       </div>
 
-      {/* Conversations List */}
-      <div className="flex-1 overflow-y-auto px-2 space-y-1">
-        {filteredConversations.length === 0 ? (
-          <div className="text-center text-neutral-500 text-sm py-8 px-4">
-            {searchQuery ? 'No chats found' : 'No chats yet'}
-          </div>
-        ) : (
-          filteredConversations.map((conv) => (
-            <div
-              key={conv.id}
-              onClick={() => setCurrentConversation(conv.id)}
-              className={`group relative px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
-                currentConversationId === conv.id
-                  ? 'bg-neutral-800'
-                  : 'hover:bg-neutral-900'
-              }`}
-            >
-              {editingId === conv.id ? (
-                <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="text"
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleSaveEdit(conv.id);
-                      if (e.key === 'Escape') setEditingId(null);
-                    }}
-                    className="flex-1 px-2 py-1 text-sm border border-neutral-700 rounded bg-neutral-900 text-white focus:outline-none"
-                    autoFocus
-                  />
-                  <button
-                    onClick={() => handleSaveEdit(conv.id)}
-                    className="p-1 text-green-500 hover:bg-neutral-800 rounded"
-                  >
-                    <Check size={14} />
-                  </button>
-                  <button
-                    onClick={() => setEditingId(null)}
-                    className="p-1 text-red-500 hover:bg-neutral-800 rounded"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center gap-2">
-                    <MessageSquare size={16} className="text-neutral-500 flex-shrink-0" />
-                    <p className="text-sm text-white truncate flex-1">
-                      {conv.title}
-                    </p>
-                  </div>
+      {/* Conversation Lists */}
+      <div className="flex-1 space-y-6 overflow-y-auto px-1 scrollbar-hide">
+        {[{ label: 'Pinned', items: pinned, icon: Pin }, { label: 'Recent', items: regular, icon: Clock }].map(({ label, items, icon: Icon }) => (
+          (items.length > 0 || label === 'Recent') && (
+            <section key={label}>
+              <div className="mb-2 flex items-center gap-2 px-3 text-xs font-bold uppercase tracking-wider text-[color:var(--text-muted)] opacity-70">
+                <Icon size={11} className="stroke-[2.5]" />
+                {label}
+              </div>
 
-                  <div className="absolute right-2 top-2 hidden group-hover:flex gap-1">
-                    <button
-                      onClick={(e) => handleEdit(conv.id, conv.title, e)}
-                      className="p-1 hover:bg-neutral-800 rounded"
-                    >
-                      <Edit2 size={14} className="text-neutral-400" />
-                    </button>
-                    <button
-                      onClick={(e) => handleDelete(conv.id, e)}
-                      className="p-1 hover:bg-neutral-800 rounded"
-                    >
-                      <Trash2 size={14} className="text-neutral-400" />
-                    </button>
-                  </div>
-                </>
+              {items.length === 0 ? (
+                <p className="px-4 text-xs italic text-[color:var(--text-muted)]">No chats yet</p>
+              ) : (
+                <ul className="space-y-1">
+                  {items.map(conv => (
+                    <li key={conv.id} className="relative group px-1">
+                      {editingId === conv.id ? (
+                        <div className="flex items-center gap-1 p-2 rounded-lg bg-[color:var(--surface)] ring-2 ring-blue-500/20 shadow-sm border border-[color:var(--border)]">
+                          <input
+                            value={editTitle}
+                            onChange={(e) => setEditTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveEdit(conv.id);
+                              if (e.key === 'Escape') setEditingId(null);
+                            }}
+                            className="flex-1 min-w-0 bg-transparent text-sm font-medium text-[color:var(--text-primary)] focus:outline-none"
+                            autoFocus
+                            placeholder="Conversation title..."
+                          />
+                          <button
+                            onClick={() => handleSaveEdit(conv.id)}
+                            className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                          >
+                            <Check size={14} />
+                          </button>
+                          <button
+                            onClick={() => setEditingId(null)}
+                            className="p-1 text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--panel-accent)] rounded"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => setCurrentConversation(conv.id)}
+                          className={`
+                            group/card relative flex items-center justify-between rounded-lg px-3 py-2.5 cursor-pointer transition-all duration-200 border border-transparent
+                            ${currentConversationId === conv.id
+                              ? 'bg-white shadow-sm !border-[color:var(--border)] dark:bg-neutral-800'
+                              : 'hover:bg-[color:var(--panel-accent)] hover:border-[color:var(--border)]'}
+                          `}
+                        >
+                          <div className="flex flex-col flex-1 min-w-0 pr-16 max-w-full">
+                            <span className={`text-sm truncate font-medium ${currentConversationId === conv.id ? 'text-[color:var(--text-primary)]' : 'text-[color:var(--text-secondary)] group-hover/card:text-[color:var(--text-primary)]'}`}>
+                              {conv.title}
+                            </span>
+                          </div>
+
+                          {/* Action Buttons - Visible on Hover */}
+                          <div className={`
+                            absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5
+                            opacity-0 group-hover:opacity-100 transition-all duration-200
+                            ${currentConversationId === conv.id ? 'opacity-100' : ''}
+                          `}>
+                            <div className="absolute inset-y-0 -left-6 w-6 bg-gradient-to-r from-transparent to-[color:var(--panel-accent)] pointer-events-none group-data-[active=true]:to-white dark:group-data-[active=true]:to-neutral-800" />
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                togglePinConversation(conv.id);
+                              }}
+                              className="p-1.5 rounded-md text-[color:var(--text-muted)] hover:text-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors"
+                              title={conv.is_pinned ? "Unpin" : "Pin conversation"}
+                            >
+                              {conv.is_pinned ? <PinOff size={13} /> : <Pin size={13} />}
+                            </button>
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startEditing(conv.id, conv.title);
+                              }}
+                              className="p-1.5 rounded-md text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--panel-accent)] transition-colors"
+                              title="Rename"
+                            >
+                              <Edit2 size={13} />
+                            </button>
+
+                            <button
+                              onClick={(e) => handleDelete(conv.id, e)}
+                              className="p-1.5 rounded-md text-[color:var(--text-muted)] hover:text-red-500 hover:bg-red-50/50 dark:hover:bg-red-900/20 transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               )}
-            </div>
-          ))
-        )}
+            </section>
+          )
+        ))}
       </div>
 
-      {/* Bottom Section - Library, User Profile, and Logout */}
-      <div className="border-t border-neutral-800 p-3 space-y-1">
-        <button
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-900 transition-colors text-left"
-        >
-          <BookOpen size={18} className="text-neutral-400" />
-          <span className="text-sm text-neutral-300">Library</span>
-        </button>
-
-        {/* User Profile */}
-        {userProfile && (
-          <div className="flex items-center justify-between px-3 py-2 mt-2 rounded-lg hover:bg-neutral-900">
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <div className="w-8 h-8 rounded-full bg-neutral-700 flex items-center justify-center flex-shrink-0">
-                <span className="text-sm font-medium text-white">
-                  {userProfile.full_name.charAt(0).toUpperCase()}
-                </span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-white truncate">{userProfile.full_name}</p>
-                <p className="text-xs text-neutral-500 truncate">{userProfile.role}</p>
-              </div>
+      {/* User Footer */}
+      {userProfile && (
+        <div className="mt-4 border-t border-[color:var(--border)] pt-4">
+          <div className="flex items-center gap-3 rounded-xl p-2 transition-colors hover:bg-[color:var(--panel-accent)]">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-tr from-purple-500 to-pink-500 text-sm font-bold text-white shadow-sm">
+              {userProfile.full_name.charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <p className="truncate text-sm font-medium text-[color:var(--text-primary)]">{userProfile.full_name}</p>
+              <p className="truncate text-xs text-[color:var(--text-muted)] capitalize">{userProfile.role}</p>
             </div>
             <button
               onClick={handleLogout}
-              className="p-1.5 hover:bg-neutral-800 rounded transition-colors"
+              className="text-[color:var(--text-muted)] hover:text-[color:var(--danger)]"
               title="Log out"
             >
-              <LogOut size={16} className="text-neutral-400" />
+              <LogOut size={18} />
             </button>
           </div>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+
+      <DeleteChatDialog
+        isOpen={Boolean(pendingDeleteId)}
+        conversationTitle={conversations.find(c => c.id === pendingDeleteId)?.title}
+        onClose={() => setPendingDeleteId(null)}
+        onConfirm={async () => {
+          if (pendingDeleteId) {
+            await deleteConversation(pendingDeleteId);
+          }
+        }}
+      />
+    </aside>
   );
 };

@@ -7,12 +7,39 @@ import { AuthForm } from './components/AuthForm';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { ChatInterface } from './components/ChatInterface';
-import { UnifiedSettings } from './components/UnifiedSettings';
+import { AdminDashboard } from './components/AdminDashboard';
+import { SettingsPanel } from './components/SettingsPanel';
+import { useAdmin } from './contexts/AdminContext';
+
+function AppContent() {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [adminDashboardOpen, setAdminDashboardOpen] = useState(false);
+  const { isAdmin } = useAdmin();
+
+  const handleOpenSettings = () => {
+    if (isAdmin) {
+      setAdminDashboardOpen(true);
+    } else {
+      setSettingsOpen(true);
+    }
+  };
+
+  return (
+    <div className="flex h-screen flex-col overflow-hidden bg-[color:var(--surface)] text-[color:var(--text)]">
+      <Header onOpenSettings={handleOpenSettings} />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar />
+        <ChatInterface />
+      </div>
+      {adminDashboardOpen && <AdminDashboard onClose={() => setAdminDashboardOpen(false)} />}
+      {settingsOpen && <SettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />}
+    </div>
+  );
+}
 
 function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -21,9 +48,7 @@ function App() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      (async () => {
-        setUser(session?.user ?? null);
-      })();
+      setUser(session?.user ?? null);
     });
 
     return () => subscription.unsubscribe();
@@ -49,17 +74,7 @@ function App() {
     <ThemeProvider>
       <AdminProvider>
         <ChatProvider>
-          <div className="h-screen flex flex-col bg-neutral-950">
-            {/* Header with theme toggle and settings (admin only) */}
-            <Header onOpenSettings={() => setSettingsOpen(true)} />
-            <div className="flex-1 flex overflow-hidden">
-              {/* Sidebar - removed duplicate settings icon */}
-              <Sidebar />
-              <ChatInterface />
-            </div>
-            {/* Settings modal - only opens when admin clicks settings icon */}
-            {settingsOpen && <UnifiedSettings onClose={() => setSettingsOpen(false)} />}
-          </div>
+          <AppContent />
         </ChatProvider>
       </AdminProvider>
     </ThemeProvider>
@@ -67,3 +82,4 @@ function App() {
 }
 
 export default App;
+

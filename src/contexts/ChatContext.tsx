@@ -1,8 +1,13 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { database } from '../lib/database';
-import { aiModelService, webhookService, analyticsService } from '../lib/adminService';
+import { aiModelService, analyticsService } from '../lib/adminService';
+import { openRouterService } from '../lib/openRouterService';
 import type { Conversation, Message, Settings, ChatState, AIModel } from '../types';
+
+interface SendMessageOptions {
+  conversationId?: string;
+}
 
 interface ChatContextType extends ChatState {
   loadConversations: () => Promise<void>;
@@ -11,7 +16,7 @@ interface ChatContextType extends ChatState {
   deleteConversation: (id: string) => Promise<void>;
   renameConversation: (id: string, title: string) => Promise<void>;
   setCurrentConversation: (id: string | null) => void;
-  sendMessage: (content: string) => Promise<void>;
+  sendMessage: (content: string, options?: SendMessageOptions) => Promise<void>;
   updateSettings: (settings: Partial<Settings>) => void;
   clearAllConversations: () => Promise<void>;
   exportConversation: (id: string, format: 'json' | 'text') => void;
@@ -25,8 +30,6 @@ interface ChatContextType extends ChatState {
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
 const DEFAULT_SETTINGS: Settings = {
-  apiUrl: 'https://your-n8n-instance.com/webhook/chat',
-  apiKey: '',
   systemPrompt: 'You are a helpful assistant.',
   temperature: 0.7,
   maxTokens: 2000
@@ -43,6 +46,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [settings, setSettings] = useState<Settings>(() => {
     const saved = localStorage.getItem('chat-settings');
     return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
+  });
+  const [pendingConversationId, setPendingConversationId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('conversation');
   });
 
   useEffect(() => {
@@ -69,6 +77,30 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     localStorage.setItem('chat-settings', JSON.stringify(settings));
   }, [settings]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (currentConversationId) {
+      params.set('conversation', currentConversationId);
+    } else {
+      params.delete('conversation');
+    }
+    const query = params.toString();
+    const newUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
+    window.history.replaceState({}, '', newUrl);
+  }, [currentConversationId]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const conversation = currentConversationId
+      ? conversations.find(c => c.id === currentConversationId)
+      : null;
+    const title = conversation && conversation.title && conversation.title !== 'New Conversation'
+      ? `${conversation.title} · DevstriX AI`
+      : 'DevstriX AI';
+    document.title = title;
+  }, [currentConversationId, conversations]);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -121,20 +153,30 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [loadMessages]);
 
-  const sendMessage = useCallback(async (content: string) => {
-    if (!currentConversationId || !selectedModel || !userId) return;
+  useEffect(() => {
+    if (!pendingConversationId) return;
+    const exists = conversations.some(c => c.id === pendingConversationId);
+    if (exists) {
+      setCurrentConversation(pendingConversationId);
+      setPendingConversationId(null);
+    }
+  }, [pendingConversationId, conversations, setCurrentConversation]);
+
+  const sendMessage = useCallback(async (content: string, options?: SendMessageOptions) => {
+    const targetConversationId = options?.conversationId ?? currentConversationId;
+    if (!targetConversationId || !selectedModel || !userId) return;
 
     const startTime = Date.now();
     setIsLoading(true);
 
     try {
-      const userMessage = await database.createMessage(currentConversationId, 'user', content, selectedModel.id);
+      const userMessage = await database.createMessage(targetConversationId, 'user', content, selectedModel.id);
       setMessages(prev => [...prev, userMessage]);
 
-      const currentConv = conversations.find(c => c.id === currentConversationId);
+      const currentConv = conversations.find(c => c.id === targetConversationId);
       if (currentConv && currentConv.title === 'New Conversation') {
         const newTitle = content.slice(0, 50) + (content.length > 50 ? '...' : '');
-        await renameConversation(currentConversationId, newTitle);
+        await renameConversation(targetConversationId, newTitle);
       }
 
       const history = messages.map(m => ({
@@ -142,52 +184,25 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         content: m.content
       }));
 
-      const webhook = await webhookService.getActiveByModelId(selectedModel.id);
-      if (!webhook) {
-        throw new Error('No active webhook configured for this model');
-      }
-
-      const payload = {
-        message: content,
-        conversation_id: currentConversationId,
-        history,
-        settings: {
-          system_prompt: settings.systemPrompt,
+      // Use OpenRouter for all models
+      const openRouterModel = selectedModel.openrouter_model || selectedModel.id;
+      
+      await openRouterService.sendMessage(
+        openRouterModel,
+        content,
+        {
+          systemPrompt: settings.systemPrompt,
           temperature: settings.temperature,
-          max_tokens: settings.maxTokens
+          maxTokens: settings.maxTokens,
+          history: history as any,
+          conversation_id: targetConversationId,
+          model_id: selectedModel.id,
         }
-      };
-
-      const data = await webhookService.callWebhook(webhook, payload);
-      const responseTime = Date.now() - startTime;
-      let assistantContent = data.response || data.message || data.output || JSON.stringify(data);
-
-      assistantContent = assistantContent
-        .replace(/<think>[\s\S]*?<\/think>/gi, '')
-        .replace(/<\/?think>/gi, '')
-        .replace(/\[output\]:\s*/gi, '')
-        .replace(/\["output"\]:\s*/gi, '')
-        .replace(/\\n/g, '\n')
-        .trim();
-
-      const assistantMessage = await database.createMessage(
-        currentConversationId,
-        'assistant',
-        assistantContent,
-        selectedModel.id
       );
-      setMessages(prev => [...prev, assistantMessage]);
 
-      await analyticsService.logUsage({
-        user_id: userId,
-        model_id: selectedModel.id,
-        conversation_id: currentConversationId,
-        message_count: 1,
-        tokens_used: Math.ceil((content.length + assistantContent.length) / 4),
-        response_time_ms: responseTime,
-        success: true,
-      });
-
+      // The edge function already stored the message and analytics
+      // Reload messages to show the AI response
+      await loadMessages(targetConversationId);
       await loadConversations();
     } catch (error) {
       const responseTime = Date.now() - startTime;
@@ -197,7 +212,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await analyticsService.logUsage({
           user_id: userId,
           model_id: selectedModel.id,
-          conversation_id: currentConversationId,
+          conversation_id: targetConversationId,
           message_count: 1,
           tokens_used: 0,
           response_time_ms: responseTime,

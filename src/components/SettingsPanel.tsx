@@ -42,45 +42,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
-          <section>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">API Configuration</h3>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Webhook URL
-                </label>
-                <input
-                  type="text"
-                  value={localSettings.apiUrl}
-                  onChange={(e) => setLocalSettings({ ...localSettings, apiUrl: e.target.value })}
-                  placeholder="https://your-n8n-instance.com/webhook/chat"
-                  className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Enter your n8n webhook endpoint or custom API URL
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  API Key / Authentication Token
-                </label>
-                <input
-                  type="password"
-                  value={localSettings.apiKey}
-                  onChange={(e) => setLocalSettings({ ...localSettings, apiKey: e.target.value })}
-                  placeholder="Your API key (optional)"
-                  className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Will be sent as Bearer token in Authorization header
-                </p>
-              </div>
-            </div>
-          </section>
-
+        <div className="p-6 space-y-6 pb-24">
           <section>
             <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">Model Parameters</h3>
 

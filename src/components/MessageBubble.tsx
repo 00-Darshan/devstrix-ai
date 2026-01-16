@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Copy, Check } from 'lucide-react';
+import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { Message } from '../types';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface MessageBubbleProps {
   message: Message;
@@ -13,73 +15,87 @@ interface MessageBubbleProps {
 export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === 'user';
+  const { theme } = useTheme();
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(message.content);
+  const copyText = async (text?: string) => {
+    await navigator.clipboard.writeText(text ?? message.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <div className="flex gap-4 mb-6">
-      <div className="flex-shrink-0">
-        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm ${
-          isUser ? 'bg-neutral-700 text-white' : 'bg-white text-black'
-        }`}>
-          {isUser ? 'Y' : 'AI'}
+    <article className={`message-shell group ${isUser ? 'user' : 'ai'}`}>
+      <header className="mb-1 flex items-center gap-3 text-xs text-[color:var(--text-muted)]">
+        <div className={`flex h-6 w-6 items-center justify-center rounded-md text-xs font-semibold ${isUser
+            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+            : 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300'
+          }`}>
+          {isUser ? 'You' : 'AI'}
         </div>
-      </div>
+        <span className="opacity-0 group-hover:opacity-100 transition-opacity">
+          {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </span>
+        {!isUser && message.model_id && (
+          <span className="rounded-full border border-[color:var(--border)] px-2 py-0.5 text-[10px] uppercase text-[color:var(--text-secondary)]">
+            {message.model_id}
+          </span>
+        )}
+        {!isUser && (
+          <button
+            onClick={() => copyText()}
+            className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-[11px] font-medium hover:text-[color:var(--text-primary)]"
+          >
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        )}
+      </header>
 
-      <div className="flex-1 min-w-0">
-        <div className={`group relative ${isUser ? 'text-white' : 'text-neutral-200'}`}>
-          {isUser ? (
-            <p className="whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
-          ) : (
-            <div className="prose prose-invert max-w-none prose-pre:bg-black prose-pre:border prose-pre:border-neutral-800">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  code({ node, inline, className, children, ...props }: any) {
-                    const match = /language-(\w+)/.exec(className || '');
-                    return !inline && match ? (
+      {isUser ? (
+        <div className="whitespace-pre-wrap">{message.content}</div>
+      ) : (
+        <div className="prose dark:prose-invert">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[rehypeKatex]}
+            components={{
+              code({ node, inline, className, children, ...props }: any) {
+                const match = /language-(\w+)/.exec(className || '');
+                if (!inline && match) {
+                  return (
+                    <div className="relative my-4 overflow-hidden rounded-xl border border-[color:var(--border)]">
+                      <div className="flex items-center justify-between bg-[color:var(--panel-accent)] px-4 py-2 text-xs text-[color:var(--text-secondary)]">
+                        <span>{match[1]}</span>
+                        <button
+                          onClick={() => copyText(String(children))}
+                          className="hover:text-[color:var(--text-primary)]"
+                        >
+                          {copied ? 'Copied' : 'Copy'}
+                        </button>
+                      </div>
                       <SyntaxHighlighter
-                        style={oneDark}
+                        style={theme === 'dark' ? oneDark : oneLight}
                         language={match[1]}
                         PreTag="div"
-                        customStyle={{
-                          background: '#000',
-                          border: '1px solid #262626',
-                          borderRadius: '8px',
-                          padding: '16px',
-                        }}
+                        customStyle={{ margin: 0, borderRadius: 0 }}
                         {...props}
                       >
                         {String(children).replace(/\n$/, '')}
                       </SyntaxHighlighter>
-                    ) : (
-                      <code className="bg-neutral-800 px-1.5 py-0.5 rounded text-sm" {...props}>
-                        {children}
-                      </code>
-                    );
-                  }
-                }}
-              >
-                {message.content}
-              </ReactMarkdown>
-            </div>
-          )}
-
-          {!isUser && (
-            <button
-              onClick={copyToClipboard}
-              className="absolute -left-8 top-0 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-neutral-800"
-              title="Copy message"
-            >
-              {copied ? <Check size={16} className="text-green-500" /> : <Copy size={16} className="text-neutral-400" />}
-            </button>
-          )}
+                    </div>
+                  );
+                }
+                return (
+                  <code className="rounded bg-[color:var(--panel-accent)] px-1.5 py-0.5 text-[0.85em] font-medium text-[color:var(--text-primary)]" {...props}>
+                    {children}
+                  </code>
+                );
+              }
+            }}
+          >
+            {message.content}
+          </ReactMarkdown>
         </div>
-      </div>
-    </div>
+      )}
+    </article>
   );
 };

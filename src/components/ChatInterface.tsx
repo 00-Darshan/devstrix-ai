@@ -1,13 +1,23 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Send, Loader2, Mic, Paperclip, ChevronDown } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Send, Loader2, Mic, Paperclip, Sparkles, Command } from 'lucide-react';
 import { useChat } from '../contexts/ChatContext';
 import { MessageBubble } from './MessageBubble';
+import { ModelSelector } from './ModelSelector';
 
 export const ChatInterface: React.FC = () => {
-  const { messages, isLoading, sendMessage, currentConversationId, selectedModel, availableModels, createConversation, setSelectedModel } = useChat();
+  const {
+    messages,
+    isLoading,
+    sendMessage,
+    currentConversationId,
+    selectedModel,
+    availableModels,
+    createConversation,
+    setSelectedModel,
+  } = useChat();
+
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [showModelSelector, setShowModelSelector] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -16,185 +26,158 @@ export const ChatInterface: React.FC = () => {
   }, [messages]);
 
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
-    }
+    if (!textareaRef.current) return;
+    textareaRef.current.style.height = 'auto';
+    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 220)}px`;
   }, [input]);
+
+  const ensureConversation = useCallback(async () => {
+    if (currentConversationId) {
+      return currentConversationId;
+    }
+    if (!selectedModel) {
+      setError('Select a model before starting a conversation.');
+      return null;
+    }
+    try {
+      return await createConversation();
+    } catch (err) {
+      setError('Unable to start a chat. Try again.');
+      return null;
+    }
+  }, [currentConversationId, selectedModel, createConversation]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading || !currentConversationId) return;
-
-    const message = input.trim();
-    setInput('');
+    if (!input.trim() || isLoading) return;
     setError(null);
-
+    const payload = input.trim();
+    setInput('');
     try {
-      await sendMessage(message);
+      const conversationId = await ensureConversation();
+      if (!conversationId) return;
+      await sendMessage(payload, { conversationId });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send message');
     }
   };
 
-  if (!currentConversationId) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-neutral-950">
-        <div className="text-center max-w-2xl px-6">
-          <h1 className="text-4xl font-semibold text-white mb-4">What are you working on?</h1>
-          <p className="text-neutral-400 text-lg mb-6">
-            {availableModels.length === 0
-              ? 'No AI models available. Please ask an admin to add models in settings.'
-              : 'Click the "New chat" button in the sidebar to get started'}
-          </p>
-          {availableModels.length > 0 && (
-            <button
-              onClick={createConversation}
-              className="px-6 py-3 bg-white text-black rounded-lg hover:bg-neutral-200 transition-colors font-medium"
-            >
-              Start New Chat
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e as any);
+    }
+  };
 
-  return (
-    <div className="flex-1 flex flex-col h-full bg-neutral-950">
-      <div className="flex-1 overflow-y-auto px-4 py-6">
-        <div className="max-w-3xl mx-auto space-y-6">
-          {messages.map((message) => (
+  const emptyState = useMemo(() => (
+    <div className="flex flex-1 flex-col items-center justify-center px-6 text-center animate-fade-in">
+      <div className="max-w-xl space-y-8">
+        <div className="space-y-2">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-600 dark:from-blue-900/30 dark:to-indigo-900/30 dark:text-blue-400">
+            <Sparkles size={32} />
+          </div>
+          <h2 className="text-3xl font-bold text-[color:var(--text-primary)]">Good Morning</h2>
+          <p className="text-base text-[color:var(--text-secondary)]">
+            {availableModels.length === 0
+              ? 'No models configured yet.'
+              : 'How can I help you today?'}
+          </p>
+        </div>
+
+        {availableModels.length > 0 && (
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: 'Summarize text', icon: '📝' },
+              { label: 'Debug code', icon: '🐛' },
+              { label: 'Write email', icon: '✉️' },
+              { label: 'Brainstorm', icon: '💡' }
+            ].map(item => (
+              <button
+                key={item.label}
+                onClick={() => setInput(item.label)}
+                className="card-base card-hover flex flex-col items-center gap-2 p-4 text-center hover:bg-gray-50/50 dark:hover:bg-neutral-800"
+              >
+                <span className="text-2xl">{item.icon}</span>
+                <span className="text-sm font-medium text-[color:var(--text-primary)]">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  ), [availableModels.length]);
+
+  const body = currentConversationId ? (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex-1 overflow-y-auto px-4 py-8">
+        <div className="mx-auto flex max-w-3xl flex-col gap-6">
+          {messages.map(message => (
             <MessageBubble key={message.id} message={message} />
           ))}
-
-          {/* Typing indicator while waiting for AI response */}
           {isLoading && (
-            <div className="flex gap-4 mb-6 animate-fadeIn">
-              <div className="flex-shrink-0">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm bg-white text-black">
-                  AI
-                </div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3 text-neutral-400">
-                  <div className="flex gap-1">
-                    <span className="w-2 h-2 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                    <span className="w-2 h-2 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                    <span className="w-2 h-2 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                  </div>
-                  <span className="text-sm text-neutral-400">AI is thinking...</span>
-                </div>
+            <div className="message-shell ai">
+              <div className="flex items-center gap-3 text-sm text-[color:var(--text-secondary)]">
+                <Loader2 size={16} className="animate-spin text-blue-500" />
+                <span className="font-medium">Thinking...</span>
               </div>
             </div>
           )}
-
           <div ref={messagesEndRef} />
         </div>
       </div>
+    </div>
+  ) : emptyState;
 
-      <div className="border-t border-neutral-800 bg-neutral-950">
-        <div className="max-w-3xl mx-auto px-4 py-4">
-          {!selectedModel && (
-            <div className="mb-3 p-3 bg-yellow-900/20 border border-yellow-800 rounded-lg">
-              <p className="text-sm text-yellow-400">⚠️ No AI model selected. Please ask an admin to configure models and webhooks.</p>
+  return (
+    <main className="flex min-h-0 flex-1 flex-col bg-[color:var(--surface)]">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {body}
+      </div>
+
+      {/* Input Area */}
+      <div className="bg-[color:var(--surface)] px-4 pb-6 pt-2">
+        <div className="mx-auto w-full max-w-3xl">
+          {/* Error Message */}
+          {(!selectedModel || error) && (
+            <div className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">
+              {!selectedModel ? 'Please select a model first.' : error}
             </div>
           )}
-          {error && (
-            <div className="mb-3 p-3 bg-red-900/20 border border-red-800 rounded-lg">
-              <p className="text-sm text-red-400">{error}</p>
-            </div>
-          )}
 
-          {/* Model Selector Dropdown */}
-          {availableModels.length > 1 && selectedModel && (
-            <div className="mb-3 relative">
-              <button
-                type="button"
-                onClick={() => setShowModelSelector(!showModelSelector)}
-                className="flex items-center gap-2 px-3 py-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg border border-neutral-700 transition-colors"
-              >
-                <span className="text-xs text-neutral-400">Using:</span>
-                <span className="text-sm font-medium text-white">{selectedModel.name}</span>
-                <ChevronDown size={14} className={`text-neutral-400 transition-transform ${showModelSelector ? 'rotate-180' : ''}`} />
+          <form onSubmit={handleSubmit} className="relative flex w-full items-end gap-2 rounded-2xl border border-[color:var(--input-border)] bg-[color:var(--input-bg)] p-2 shadow-sm focus-within:ring-2 focus-within:ring-blue-500/10 focus-within:border-blue-500 transition-all">
+            <button type="button" className="rounded-xl p-2.5 text-[color:var(--text-muted)] hover:bg-[color:var(--panel-accent)] hover:text-[color:var(--text-primary)] transition-colors">
+              <Paperclip size={20} />
+            </button>
+
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask anything..."
+              className="max-h-[200px] min-h-[44px] flex-1 resize-none bg-transparent py-2.5 text-base text-[color:var(--text-primary)] placeholder-[color:var(--text-muted)] focus:outline-none"
+              rows={1}
+            />
+
+            <div className="flex items-center gap-1 pb-1">
+              <button type="button" className="rounded-xl p-2 text-[color:var(--text-muted)] hover:bg-[color:var(--panel-accent)] hover:text-[color:var(--text-primary)] transition-colors">
+                <Mic size={20} />
               </button>
-
-              {showModelSelector && (
-                <div className="absolute bottom-full mb-2 w-full bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl overflow-hidden z-10">
-                  {availableModels.map((model) => (
-                    <button
-                      key={model.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedModel(model);
-                        setShowModelSelector(false);
-                      }}
-                      className={`w-full px-3 py-2.5 text-left hover:bg-neutral-700 transition-colors ${
-                        selectedModel.id === model.id ? 'bg-neutral-700' : ''
-                      }`}
-                    >
-                      <div className="font-medium text-white text-sm">{model.name}</div>
-                      <div className="text-xs text-neutral-400">{model.description}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="relative">
-            <div className="flex items-end gap-2 bg-neutral-900 rounded-2xl border border-neutral-700 focus-within:border-neutral-600 p-2">
               <button
-                type="button"
-                className="p-2 text-neutral-400 hover:text-neutral-200 transition-colors rounded-lg hover:bg-neutral-800"
+                type="submit"
+                disabled={!input.trim() || isLoading}
+                className="flex items-center justify-center rounded-xl bg-[color:var(--text-primary)] p-2 text-[color:var(--surface)] transition-all hover:opacity-90 disabled:opacity-30"
               >
-                <Paperclip size={20} />
+                <Send size={18} strokeWidth={2.5} />
               </button>
-
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSubmit(e);
-                  }
-                }}
-                placeholder="Ask anything"
-                disabled={isLoading}
-                rows={1}
-                className="flex-1 bg-transparent text-white placeholder-neutral-500 focus:outline-none resize-none max-h-[200px] py-2 text-[15px]"
-              />
-
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  className="p-2 text-neutral-400 hover:text-neutral-200 transition-colors rounded-lg hover:bg-neutral-800"
-                >
-                  <Mic size={20} />
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={!input.trim() || isLoading}
-                  className="p-2 bg-white text-black rounded-lg hover:bg-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                >
-                  {isLoading ? (
-                    <Loader2 size={20} className="animate-spin" />
-                  ) : (
-                    <Send size={20} />
-                  )}
-                </button>
-              </div>
             </div>
           </form>
 
-          <p className="text-xs text-neutral-500 text-center mt-3">
-            DevstriX AI can make mistakes. Check important info.
-          </p>
+          <div className="mt-2 text-center text-xs text-[color:var(--text-muted)]">
+            AI can make mistakes. Please verify important information.
+          </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 };

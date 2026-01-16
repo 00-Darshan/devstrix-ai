@@ -140,15 +140,22 @@ export const webhookService = {
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...webhook.headers,
+      ...(webhook.headers || {}),
     };
 
-    if (webhook.api_key) {
+    if (webhook.auth_type === 'api_key' && webhook.api_key) {
       headers['Authorization'] = `Bearer ${webhook.api_key}`;
     }
 
+    if (webhook.auth_type === 'basic' && webhook.basic_auth_username) {
+      const password = webhook.basic_auth_password || '';
+      const credentials = btoa(`${webhook.basic_auth_username}:${password}`);
+      headers['Authorization'] = `Basic ${credentials}`;
+    }
+
     const controller = new AbortController();
-    const timeoutMs = webhook.timeout_seconds * 1000;
+    const timeoutSeconds = Math.max(5, Math.min(webhook.timeout_seconds || 60, 300));
+    const timeoutMs = timeoutSeconds * 1000;
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
@@ -188,7 +195,7 @@ export const webhookService = {
 
       if (error.name === 'AbortError') {
         console.error(`⏱️ Webhook timeout after ${timeoutMs}ms`);
-        throw new Error(`Webhook timeout after ${webhook.timeout_seconds} seconds. Your n8n workflow may be taking too long to respond.`);
+        throw new Error(`Webhook timeout after ${timeoutSeconds} seconds. Your n8n workflow may be taking too long to respond.`);
       }
 
       console.error('❌ Webhook call failed:', error);

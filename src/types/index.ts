@@ -26,6 +26,7 @@ export interface AIModel {
   use_case: 'general' | 'code' | 'content' | 'analysis' | 'image' | 'other';
   icon: string;
   is_active: boolean;
+  openrouter_model?: string;
   created_at: string;
   updated_at: string;
 }
@@ -37,6 +38,9 @@ export interface Webhook {
   url: string;
   api_key?: string;
   headers?: Record<string, string>;
+  auth_type: 'none' | 'api_key' | 'basic';
+  basic_auth_username?: string;
+  basic_auth_password?: string;
   is_active: boolean;
   timeout_seconds: number;
   created_at: string;
@@ -65,8 +69,6 @@ export interface UsageAnalytics {
 }
 
 export interface Settings {
-  apiUrl: string;
-  apiKey: string;
   systemPrompt: string;
   temperature: number;
   maxTokens: number;
