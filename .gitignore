@@ -21,3 +21,11 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+
+# Supabase temp files
+supabase/.temp/
+
+# Supabase migrations (ignore all migration files)
+supabase/migrations/
+
